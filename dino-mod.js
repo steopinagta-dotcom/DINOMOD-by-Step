@@ -1,78 +1,53 @@
 (function () {
     'use strict';
 
-    if (window.__DINO_FULL_MOD_LOADED__) return;
-    window.__DINO_FULL_MOD_LOADED__ = true;
+    if (window.__DINO_UI_MOD_LOADED__) return;
+    window.__DINO_UI_MOD_LOADED__ = true;
 
-    const SAVE_KEY = 'dino_mod_settings_v1';
+    const SAVE_KEY = 'dino_ui_mod_v2';
 
     const state = {
-        speed: null,
-        maxSpeed: null,
-        acceleration: null,
-        gravity: null,
-        gapCoefficient: null,
-        initialJumpVelocity: null,
-        minJumpHeight: null,
-        nightMode: false,
+        gameSize: 100,
+        gameRotation: 0,
+        roundedCorners: 0,
+        gameGlow: 0,
+        gameTransparency: 100,
 
-        invert: 0,
-        hue: 0,
+        invertColors: 0,
+        colorShift: 0,
         grayscale: 0,
         sepia: 0,
-        saturate: 100,
+        saturation: 100,
         contrast: 100,
         brightness: 100,
-        blur: 0,
+        blurEffect: 0,
 
-        canvasScale: 1,
-        rotateDeg: 0,
-        borderRadius: 0,
-        glow: 0,
-        opacity: 100,
+        websiteZoom: 100,
+        menuOpacity: 96,
+        rainbowAnimation: false,
+        breathingAnimation: false,
+        screenShakeEffect: false,
 
-        pageZoom: 100,
-        menuOpacity: 95,
-
-        rainbowMode: false,
-        pulseMode: false,
-        shakeCanvas: false,
-
-        hideFooter: false,
+        hideBottomWebsiteBar: false,
         hidePopups: false,
-        darkPage: false
+        darkWebsiteBackground: false
     };
 
-    let defaults = null;
-    let panel = null;
-    let body = null;
-    let header = null;
-    let animationTimer = null;
+    let panel, body, trailCanvas, trailCtx, canvasEl;
+    let particles = [];
+    let activeTab = 'visuals';
 
-    function log(...args) {
-        console.log('[Dino Mod]', ...args);
-    }
+    function qs(s) { return document.querySelector(s); }
+    function qsa(s) { return Array.from(document.querySelectorAll(s)); }
+    function getGameCanvas() { return qs('.runner-canvas') || qs('canvas'); }
 
-    function $(sel) {
-        return document.querySelector(sel);
-    }
-
-    function getCanvas() {
-        return document.querySelector('.runner-canvas') || document.querySelector('canvas');
-    }
-
-    function getConfig() {
-        return window.DINO_CONFIG || null;
-    }
-
-    function loadSaved() {
+    function loadState() {
         try {
             const raw = localStorage.getItem(SAVE_KEY);
             if (!raw) return;
-            const saved = JSON.parse(raw);
-            Object.assign(state, saved);
+            Object.assign(state, JSON.parse(raw));
         } catch (e) {
-            log('Failed to load saved settings', e);
+            console.warn('[Dino UI Mod] Load failed', e);
         }
     }
 
@@ -80,117 +55,56 @@
         try {
             localStorage.setItem(SAVE_KEY, JSON.stringify(state));
         } catch (e) {
-            log('Failed to save settings', e);
+            console.warn('[Dino UI Mod] Save failed', e);
         }
-    }
-
-    function waitForReady(cb) {
-        const t = setInterval(() => {
-            const cfg = getConfig();
-            const canvas = getCanvas();
-            if (cfg && canvas) {
-                clearInterval(t);
-                cb(cfg, canvas);
-            }
-        }, 300);
-    }
-
-    function captureDefaults(cfg) {
-        defaults = {
-            speed: cfg.speed,
-            maxSpeed: cfg.maxSpeed,
-            acceleration: cfg.acceleration,
-            gravity: cfg.gravity,
-            gapCoefficient: cfg.gapCoefficient,
-            initialJumpVelocity: cfg.initialJumpVelocity,
-            minJumpHeight: cfg.minJumpHeight,
-            nightMode: cfg.nightMode,
-
-            invert: 0,
-            hue: 0,
-            grayscale: 0,
-            sepia: 0,
-            saturate: 100,
-            contrast: 100,
-            brightness: 100,
-            blur: 0,
-
-            canvasScale: 1,
-            rotateDeg: 0,
-            borderRadius: 0,
-            glow: 0,
-            opacity: 100,
-
-            pageZoom: 100,
-            menuOpacity: 95,
-
-            rainbowMode: false,
-            pulseMode: false,
-            shakeCanvas: false,
-
-            hideFooter: false,
-            hidePopups: false,
-            darkPage: false
-        };
-    }
-
-    function applyConfig(cfg) {
-        if (state.speed != null) cfg.speed = Number(state.speed);
-        if (state.maxSpeed != null) cfg.maxSpeed = Number(state.maxSpeed);
-        if (state.acceleration != null) cfg.acceleration = Number(state.acceleration);
-        if (state.gravity != null) cfg.gravity = Number(state.gravity);
-        if (state.gapCoefficient != null) cfg.gapCoefficient = Number(state.gapCoefficient);
-        if (state.initialJumpVelocity != null) cfg.initialJumpVelocity = Number(state.initialJumpVelocity);
-        if (state.minJumpHeight != null) cfg.minJumpHeight = Number(state.minJumpHeight);
-        cfg.nightMode = !!state.nightMode;
     }
 
     function applyVisuals() {
-        const canvas = getCanvas();
-        if (!canvas) return;
+        canvasEl = getGameCanvas();
+        if (canvasEl) {
+            let scale = state.gameSize / 100;
+            let transform = `scale(${scale}) rotate(${state.gameRotation}deg)`;
 
-        const filter = [
-            `invert(${state.invert}%)`,
-            `hue-rotate(${state.hue}deg)`,
-            `grayscale(${state.grayscale}%)`,
-            `sepia(${state.sepia}%)`,
-            `saturate(${state.saturate}%)`,
-            `contrast(${state.contrast}%)`,
-            `brightness(${state.brightness}%)`,
-            `blur(${state.blur}px)`
-        ].join(' ');
+            if (state.screenShakeEffect) {
+                const dx = (Math.random() * 4 - 2).toFixed(1);
+                const dy = (Math.random() * 4 - 2).toFixed(1);
+                transform += ` translate(${dx}px, ${dy}px)`;
+            }
 
-        let transform = `scale(${state.canvasScale}) rotate(${state.rotateDeg}deg)`;
+            if (state.breathingAnimation) {
+                const pulse = 1 + Math.sin(Date.now() / 220) * 0.025;
+                transform += ` scale(${pulse})`;
+            }
 
-        if (state.shakeCanvas) {
-            const dx = (Math.random() * 6 - 3).toFixed(1);
-            const dy = (Math.random() * 6 - 3).toFixed(1);
-            transform += ` translate(${dx}px, ${dy}px)`;
+            const filter = [
+                `invert(${state.invertColors}%)`,
+                `hue-rotate(${state.colorShift}deg)`,
+                `grayscale(${state.grayscale}%)`,
+                `sepia(${state.sepia}%)`,
+                `saturate(${state.saturation}%)`,
+                `contrast(${state.contrast}%)`,
+                `brightness(${state.brightness}%)`,
+                `blur(${state.blurEffect}px)`
+            ].join(' ');
+
+            canvasEl.style.transition = 'all .08s linear';
+            canvasEl.style.transform = transform;
+            canvasEl.style.transformOrigin = 'center center';
+            canvasEl.style.filter = filter;
+            canvasEl.style.borderRadius = state.roundedCorners + 'px';
+            canvasEl.style.opacity = String(state.gameTransparency / 100);
+            canvasEl.style.boxShadow = `0 0 ${state.gameGlow}px rgba(0,255,255,.85)`;
         }
 
-        if (state.pulseMode) {
-            const s = 1 + Math.sin(Date.now() / 180) * 0.03;
-            transform += ` scale(${s})`;
-        }
+        document.documentElement.style.zoom = String(state.websiteZoom / 100);
 
-        canvas.style.transition = 'filter 0.08s linear, transform 0.08s linear, box-shadow 0.08s linear, opacity 0.08s linear';
-        canvas.style.filter = filter;
-        canvas.style.transform = transform;
-        canvas.style.transformOrigin = 'center center';
-        canvas.style.borderRadius = state.borderRadius + 'px';
-        canvas.style.opacity = String(state.opacity / 100);
-        canvas.style.boxShadow = `0 0 ${state.glow}px rgba(0,255,255,0.9)`;
+        const footer = qs('.footer');
+        if (footer) footer.style.display = state.hideBottomWebsiteBar ? 'none' : '';
 
-        document.documentElement.style.zoom = String(state.pageZoom / 100);
+        qsa('.blur_dialog, .contact-popup, #modalControl, #modalShare, #contact-popup')
+            .forEach(el => el.style.display = state.hidePopups ? 'none' : '');
 
-        const footer = document.querySelector('.footer');
-        if (footer) footer.style.display = state.hideFooter ? 'none' : '';
-
-        document.querySelectorAll('.blur_dialog, .contact-popup, #modalControl, #modalShare, #contact-popup').forEach(el => {
-            el.style.display = state.hidePopups ? 'none' : '';
-        });
-
-        if (state.darkPage) {
+        if (state.darkWebsiteBackground) {
             document.body.style.background = '#0a0a0a';
             document.body.style.color = '#fff';
         } else {
@@ -198,374 +112,476 @@
             document.body.style.color = '';
         }
 
-        if (panel) {
-            panel.style.opacity = String(state.menuOpacity / 100);
+        if (panel) panel.style.opacity = String(state.menuOpacity / 100);
+    }
+
+    function loop() {
+        if (state.rainbowAnimation) {
+            state.colorShift = (state.colorShift + 2) % 360;
+            const input = panel?.querySelector('[data-key="colorShift"][type="range"]');
+            const number = panel?.querySelector('[data-key-number="colorShift"]');
+            const val = panel?.querySelector('[data-key-value="colorShift"]');
+            if (input) input.value = state.colorShift;
+            if (number) number.value = state.colorShift;
+            if (val) val.textContent = state.colorShift;
         }
+        applyVisuals();
+        requestAnimationFrame(loop);
     }
 
-    function startAnimationLoop(cfg) {
-        if (animationTimer) clearInterval(animationTimer);
-        animationTimer = setInterval(() => {
-            if (state.rainbowMode) {
-                state.hue = (state.hue + 2) % 360;
-                const hueSlider = document.querySelector('[data-setting="hue"]');
-                const hueValue = document.querySelector('[data-value="hue"]');
-                if (hueSlider) hueSlider.value = state.hue;
-                if (hueValue) hueValue.textContent = state.hue;
-            }
-            applyConfig(cfg);
-            applyVisuals();
-        }, 60);
+    function sectionTitle(text) {
+        const d = document.createElement('div');
+        d.textContent = text;
+        d.style.cssText = `
+            margin: 12px 0 8px;
+            padding: 8px 10px;
+            border-radius: 10px;
+            background: rgba(255,255,255,.06);
+            font-weight: 700;
+            letter-spacing: .2px;
+        `;
+        return d;
     }
 
-    function makeSlider(label, key, min, max, step, value) {
+    function createControlRow(label, key, min, max, step) {
         const wrap = document.createElement('div');
-        wrap.style.marginBottom = '10px';
+        wrap.style.marginBottom = '12px';
 
         const top = document.createElement('div');
-        top.style.display = 'flex';
-        top.style.justifyContent = 'space-between';
-        top.style.marginBottom = '4px';
+        top.style.cssText = 'display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px;';
 
-        const left = document.createElement('span');
+        const left = document.createElement('div');
         left.textContent = label;
+        left.style.fontWeight = '600';
 
-        const right = document.createElement('span');
-        right.textContent = value;
-        right.setAttribute('data-value', key);
+        const right = document.createElement('div');
+        right.style.cssText = 'display:flex;align-items:center;gap:6px;';
 
-        const input = document.createElement('input');
-        input.type = 'range';
-        input.min = min;
-        input.max = max;
-        input.step = step;
-        input.value = value;
-        input.style.width = '100%';
-        input.setAttribute('data-setting', key);
+        const value = document.createElement('span');
+        value.textContent = state[key];
+        value.setAttribute('data-key-value', key);
+        value.style.cssText = 'min-width:42px;text-align:right;font-size:12px;opacity:.9;';
 
-        input.addEventListener('input', () => {
-            state[key] = Number(input.value);
-            right.textContent = input.value;
+        const number = document.createElement('input');
+        number.type = 'number';
+        number.min = min;
+        number.max = max;
+        number.step = step;
+        number.value = state[key];
+        number.setAttribute('data-key-number', key);
+        number.style.cssText = `
+            width:72px;padding:4px 6px;border-radius:8px;border:1px solid #444;
+            background:#111;color:#fff;outline:none;
+        `;
+
+        const range = document.createElement('input');
+        range.type = 'range';
+        range.min = min;
+        range.max = max;
+        range.step = step;
+        range.value = state[key];
+        range.setAttribute('data-key', key);
+        range.style.cssText = 'width:100%;accent-color:#53d8ff;';
+
+        function sync(v) {
+            let num = Number(v);
+            if (Number.isNaN(num)) return;
+            if (min !== undefined) num = Math.max(Number(min), num);
+            if (max !== undefined) num = Math.min(Number(max), num);
+            state[key] = num;
+            value.textContent = num;
+            range.value = num;
+            number.value = num;
             saveState();
-            const cfg = getConfig();
-            if (cfg) applyConfig(cfg);
             applyVisuals();
+        }
+
+        range.addEventListener('input', () => sync(range.value));
+        number.addEventListener('change', () => sync(number.value));
+        number.addEventListener('keydown', e => {
+            if (e.key === 'Enter') sync(number.value);
         });
 
-        top.appendChild(left);
-        top.appendChild(right);
-        wrap.appendChild(top);
-        wrap.appendChild(input);
+        right.append(value, number);
+        top.append(left, right);
+        wrap.append(top, range);
         return wrap;
     }
 
-    function makeCheckbox(label, key, checked) {
-        const wrap = document.createElement('label');
-        wrap.style.display = 'flex';
-        wrap.style.alignItems = 'center';
-        wrap.style.gap = '8px';
-        wrap.style.marginBottom = '10px';
+    function createCheckbox(label, key) {
+        const lab = document.createElement('label');
+        lab.style.cssText = `
+            display:flex;align-items:center;gap:10px;margin:10px 0;
+            padding:8px 10px;border-radius:10px;
+            background:rgba(255,255,255,.03);
+            transition:background .2s ease, transform .2s ease;
+            cursor:pointer;
+        `;
+        lab.onmouseenter = () => {
+            lab.style.background = 'rgba(83,216,255,.08)';
+            lab.style.transform = 'translateX(2px)';
+        };
+        lab.onmouseleave = () => {
+            lab.style.background = 'rgba(255,255,255,.03)';
+            lab.style.transform = 'translateX(0)';
+        };
 
         const input = document.createElement('input');
         input.type = 'checkbox';
-        input.checked = checked;
+        input.checked = !!state[key];
+        input.style.accentColor = '#53d8ff';
+
+        const text = document.createElement('span');
+        text.textContent = label;
 
         input.addEventListener('change', () => {
             state[key] = input.checked;
             saveState();
-            const cfg = getConfig();
-            if (cfg) applyConfig(cfg);
             applyVisuals();
         });
 
-        const span = document.createElement('span');
-        span.textContent = label;
-
-        wrap.appendChild(input);
-        wrap.appendChild(span);
-        return wrap;
+        lab.append(input, text);
+        return lab;
     }
 
-    function makeButton(label, fn) {
-        const btn = document.createElement('button');
-        btn.textContent = label;
-        btn.style.cssText = `
-            width: 100%;
-            margin-bottom: 8px;
-            padding: 8px 10px;
-            background: #1d1d1d;
-            color: #fff;
-            border: 1px solid #444;
-            border-radius: 8px;
-            cursor: pointer;
+    function createButton(text, fn) {
+        const b = document.createElement('button');
+        b.textContent = text;
+        b.style.cssText = `
+            width:100%;
+            margin:8px 0;
+            padding:10px 12px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,.14);
+            background:linear-gradient(180deg,#1b1b1b,#101010);
+            color:#fff;
+            cursor:pointer;
+            transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
         `;
-        btn.addEventListener('click', fn);
-        return btn;
+        b.onmouseenter = () => {
+            b.style.transform = 'translateY(-1px)';
+            b.style.boxShadow = '0 0 18px rgba(83,216,255,.22)';
+            b.style.borderColor = 'rgba(83,216,255,.45)';
+            b.style.background = 'linear-gradient(180deg,#253640,#12181c)';
+        };
+        b.onmouseleave = () => {
+            b.style.transform = 'translateY(0)';
+            b.style.boxShadow = '';
+            b.style.borderColor = 'rgba(255,255,255,.14)';
+            b.style.background = 'linear-gradient(180deg,#1b1b1b,#101010)';
+        };
+        b.addEventListener('click', fn);
+        return b;
     }
 
-    function buildUI(cfg) {
+    function tabButton(id, text) {
+        const b = document.createElement('button');
+        b.textContent = text;
+        b.style.cssText = `
+            flex:1;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.08);
+            background:${activeTab === id ? 'rgba(83,216,255,.18)' : 'rgba(255,255,255,.04)'};
+            color:#fff;cursor:pointer;transition:all .2s ease;
+        `;
+        b.onmouseenter = () => {
+            if (activeTab !== id) b.style.background = 'rgba(83,216,255,.10)';
+        };
+        b.onmouseleave = () => {
+            if (activeTab !== id) b.style.background = 'rgba(255,255,255,.04)';
+        };
+        b.onclick = () => {
+            activeTab = id;
+            renderTabContent();
+            renderTabs();
+        };
+        b.dataset.tabId = id;
+        return b;
+    }
+
+    let tabsRow, contentArea;
+
+    function renderTabs() {
+        tabsRow.innerHTML = '';
+        tabsRow.append(
+            tabButton('visuals', 'Visuals'),
+            tabButton('effects', 'Effects'),
+            tabButton('website', 'Website'),
+            tabButton('themes', 'Themes'),
+            tabButton('settings', 'Settings')
+        );
+    }
+
+    function renderTabContent() {
+        contentArea.innerHTML = '';
+
+        if (activeTab === 'visuals') {
+            contentArea.append(
+                sectionTitle('Game Appearance'),
+                createControlRow('Game Size', 'gameSize', 50, 300, 1),
+                createControlRow('Game Rotation', 'gameRotation', -180, 180, 1),
+                createControlRow('Rounded Corners', 'roundedCorners', 0, 50, 1),
+                createControlRow('Game Glow', 'gameGlow', 0, 80, 1),
+                createControlRow('Game Transparency', 'gameTransparency', 10, 100, 1)
+            );
+        }
+
+        if (activeTab === 'effects') {
+            contentArea.append(
+                sectionTitle('Color & Filter Effects'),
+                createControlRow('Invert Colors', 'invertColors', 0, 100, 1),
+                createControlRow('Color Shift', 'colorShift', 0, 360, 1),
+                createControlRow('Grayscale', 'grayscale', 0, 100, 1),
+                createControlRow('Sepia', 'sepia', 0, 100, 1),
+                createControlRow('Saturation', 'saturation', 0, 300, 1),
+                createControlRow('Contrast', 'contrast', 0, 300, 1),
+                createControlRow('Brightness', 'brightness', 0, 300, 1),
+                createControlRow('Blur Effect', 'blurEffect', 0, 10, 0.1),
+                createCheckbox('Rainbow Color Animation', 'rainbowAnimation'),
+                createCheckbox('Breathing Size Animation', 'breathingAnimation'),
+                createCheckbox('Screen Shake Effect', 'screenShakeEffect')
+            );
+        }
+
+        if (activeTab === 'website') {
+            contentArea.append(
+                sectionTitle('Website Options'),
+                createControlRow('Website Zoom', 'websiteZoom', 50, 200, 1),
+                createControlRow('Menu Transparency', 'menuOpacity', 20, 100, 1),
+                createCheckbox('Hide Bottom Website Bar', 'hideBottomWebsiteBar'),
+                createCheckbox('Hide Website Popups', 'hidePopups'),
+                createCheckbox('Dark Website Background', 'darkWebsiteBackground')
+            );
+        }
+
+        if (activeTab === 'themes') {
+            contentArea.append(
+                sectionTitle('Quick Themes'),
+                createButton('Default Theme', () => {
+                    Object.assign(state, {
+                        gameSize: 100, gameRotation: 0, roundedCorners: 0, gameGlow: 0, gameTransparency: 100,
+                        invertColors: 0, colorShift: 0, grayscale: 0, sepia: 0, saturation: 100,
+                        contrast: 100, brightness: 100, blurEffect: 0,
+                        rainbowAnimation: false, breathingAnimation: false, screenShakeEffect: false
+                    });
+                    saveState(); rerender();
+                }),
+                createButton('Neon Theme', () => {
+                    Object.assign(state, {
+                        gameGlow: 28, saturation: 180, contrast: 145, brightness: 115, colorShift: 160
+                    });
+                    saveState(); rerender();
+                }),
+                createButton('Retro Theme', () => {
+                    Object.assign(state, {
+                        grayscale: 15, sepia: 35, contrast: 130, brightness: 95, gameGlow: 8
+                    });
+                    saveState(); rerender();
+                }),
+                createButton('Inverted Theme', () => {
+                    Object.assign(state, {
+                        invertColors: 100, colorShift: 180, contrast: 120
+                    });
+                    saveState(); rerender();
+                }),
+                createButton('Soft Glow Theme', () => {
+                    Object.assign(state, {
+                        gameGlow: 18, brightness: 108, blurEffect: 0.3, roundedCorners: 12
+                    });
+                    saveState(); rerender();
+                }),
+                createButton('Weird Theme', () => {
+                    Object.assign(state, {
+                        colorShift: 220, saturation: 220, contrast: 165, brightness: 120,
+                        breathingAnimation: true, rainbowAnimation: true
+                    });
+                    saveState(); rerender();
+                })
+            );
+        }
+
+        if (activeTab === 'settings') {
+            contentArea.append(
+                sectionTitle('Settings'),
+                createButton('Save Settings', () => saveState()),
+                createButton('Reset Everything', () => {
+                    localStorage.removeItem(SAVE_KEY);
+                    Object.assign(state, {
+                        gameSize: 100, gameRotation: 0, roundedCorners: 0, gameGlow: 0, gameTransparency: 100,
+                        invertColors: 0, colorShift: 0, grayscale: 0, sepia: 0, saturation: 100,
+                        contrast: 100, brightness: 100, blurEffect: 0,
+                        websiteZoom: 100, menuOpacity: 96,
+                        rainbowAnimation: false, breathingAnimation: false, screenShakeEffect: false,
+                        hideBottomWebsiteBar: false, hidePopups: false, darkWebsiteBackground: false
+                    });
+                    rerender();
+                }),
+                createButton('Show Canvas Outline', () => {
+                    const c = getGameCanvas();
+                    if (c) c.style.outline = '2px solid #ff4d4d';
+                }),
+                createButton('Remove Canvas Outline', () => {
+                    const c = getGameCanvas();
+                    if (c) c.style.outline = '';
+                }),
+                createButton('Hide Menu (F8)', () => {
+                    panel.style.display = 'none';
+                })
+            );
+        }
+    }
+
+    function setupGlowTrail(container) {
+        trailCanvas = document.createElement('canvas');
+        trailCanvas.style.cssText = `
+            position:absolute;inset:0;width:100%;height:100%;
+            pointer-events:none;border-radius:14px;z-index:0;
+        `;
+        container.appendChild(trailCanvas);
+        trailCtx = trailCanvas.getContext('2d');
+
+        function resize() {
+            trailCanvas.width = container.clientWidth;
+            trailCanvas.height = container.clientHeight;
+        }
+        resize();
+        new ResizeObserver(resize).observe(container);
+
+        container.addEventListener('mousemove', e => {
+            const rect = container.getBoundingClientRect();
+            particles.push({
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top,
+                r: 18,
+                a: 0.22,
+                vx: (Math.random() - 0.5) * 0.2,
+                vy: (Math.random() - 0.5) * 0.2
+            });
+        });
+
+        function animateTrail() {
+            if (!trailCtx) return requestAnimationFrame(animateTrail);
+
+            trailCtx.clearRect(0, 0, trailCanvas.width, trailCanvas.height);
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.r *= 0.96;
+                p.a *= 0.95;
+
+                if (p.r < 0.8 || p.a < 0.01) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+
+                const g = trailCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+                g.addColorStop(0, `rgba(83,216,255,${p.a})`);
+                g.addColorStop(0.45, `rgba(83,216,255,${p.a * 0.45})`);
+                g.addColorStop(1, `rgba(83,216,255,0)`);
+                trailCtx.fillStyle = g;
+                trailCtx.beginPath();
+                trailCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                trailCtx.fill();
+            }
+
+            requestAnimationFrame(animateTrail);
+        }
+        animateTrail();
+    }
+
+    function buildUI() {
         panel = document.createElement('div');
         panel.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            width: 320px;
-            max-height: 85vh;
-            overflow-y: auto;
-            background: rgba(15,15,15,0.95);
-            color: white;
-            z-index: 999999;
-            border-radius: 12px;
-            border: 1px solid #333;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-            font-family: Arial, sans-serif;
-            font-size: 13px;
-            user-select: none;
+            position:fixed;top:20px;right:20px;z-index:999999;
+            width:360px;max-height:86vh;overflow:hidden;
+            border-radius:14px;
+            border:1px solid rgba(255,255,255,.1);
+            background:linear-gradient(180deg,rgba(20,20,24,.92),rgba(10,10,14,.92));
+            color:#fff;
+            box-shadow:0 12px 35px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
+            backdrop-filter:blur(12px);
+            font:13px Arial,sans-serif;
+            user-select:none;
         `;
 
-        header = document.createElement('div');
-        header.textContent = 'Dino Full Custom Menu';
+        const inner = document.createElement('div');
+        inner.style.cssText = 'position:relative;z-index:1;display:flex;flex-direction:column;';
+
+        const header = document.createElement('div');
+        header.textContent = 'Dino Customization Menu';
         header.style.cssText = `
-            padding: 10px 12px;
-            font-weight: bold;
-            cursor: move;
-            border-bottom: 1px solid #333;
-            background: linear-gradient(180deg, #1f1f1f, #111);
-            border-radius: 12px 12px 0 0;
-            position: sticky;
-            top: 0;
-            z-index: 2;
+            padding:12px 14px;font-weight:700;cursor:move;
+            border-bottom:1px solid rgba(255,255,255,.08);
+            background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));
+            letter-spacing:.2px;
         `;
 
-        body = document.createElement('div');
-        body.style.padding = '10px';
+        tabsRow = document.createElement('div');
+        tabsRow.style.cssText = 'display:flex;gap:8px;padding:10px 10px 0 10px;';
 
-        body.appendChild(sectionTitle('Gameplay Config'));
-        body.appendChild(makeCheckbox('Night Mode', 'nightMode', state.nightMode));
-        body.appendChild(makeSlider('Speed', 'speed', 1, 30, 0.5, state.speed));
-        body.appendChild(makeSlider('Max Speed', 'maxSpeed', 1, 50, 0.5, state.maxSpeed));
-        body.appendChild(makeSlider('Acceleration', 'acceleration', 0, 2, 0.01, state.acceleration));
-        body.appendChild(makeSlider('Gravity', 'gravity', 0.1, 3, 0.1, state.gravity));
-        body.appendChild(makeSlider('Gap Coefficient', 'gapCoefficient', 0, 5, 0.1, state.gapCoefficient));
-        body.appendChild(makeSlider('Jump Velocity', 'initialJumpVelocity', 1, 30, 0.5, state.initialJumpVelocity));
-        body.appendChild(makeSlider('Min Jump Height', 'minJumpHeight', 0, 100, 1, state.minJumpHeight));
+        contentArea = document.createElement('div');
+        contentArea.style.cssText = 'padding:10px;overflow:auto;max-height:65vh;';
 
-        body.appendChild(sectionTitle('Canvas FX'));
-        body.appendChild(makeSlider('Invert', 'invert', 0, 100, 1, state.invert));
-        body.appendChild(makeSlider('Hue Rotate', 'hue', 0, 360, 1, state.hue));
-        body.appendChild(makeSlider('Grayscale', 'grayscale', 0, 100, 1, state.grayscale));
-        body.appendChild(makeSlider('Sepia', 'sepia', 0, 100, 1, state.sepia));
-        body.appendChild(makeSlider('Saturate', 'saturate', 0, 300, 1, state.saturate));
-        body.appendChild(makeSlider('Contrast', 'contrast', 0, 300, 1, state.contrast));
-        body.appendChild(makeSlider('Brightness', 'brightness', 0, 300, 1, state.brightness));
-        body.appendChild(makeSlider('Blur', 'blur', 0, 10, 0.1, state.blur));
-        body.appendChild(makeSlider('Canvas Scale', 'canvasScale', 0.5, 3, 0.01, state.canvasScale));
-        body.appendChild(makeSlider('Rotate', 'rotateDeg', -180, 180, 1, state.rotateDeg));
-        body.appendChild(makeSlider('Border Radius', 'borderRadius', 0, 50, 1, state.borderRadius));
-        body.appendChild(makeSlider('Glow', 'glow', 0, 80, 1, state.glow));
-        body.appendChild(makeSlider('Canvas Opacity', 'opacity', 10, 100, 1, state.opacity));
+        inner.append(header, tabsRow, contentArea);
+        panel.append(inner);
+        document.body.append(panel);
 
-        body.appendChild(sectionTitle('Page / Fun'));
-        body.appendChild(makeSlider('Page Zoom', 'pageZoom', 50, 200, 1, state.pageZoom));
-        body.appendChild(makeSlider('Menu Opacity', 'menuOpacity', 20, 100, 1, state.menuOpacity));
-        body.appendChild(makeCheckbox('Rainbow Mode', 'rainbowMode', state.rainbowMode));
-        body.appendChild(makeCheckbox('Pulse Mode', 'pulseMode', state.pulseMode));
-        body.appendChild(makeCheckbox('Shake Canvas', 'shakeCanvas', state.shakeCanvas));
-        body.appendChild(makeCheckbox('Hide Footer', 'hideFooter', state.hideFooter));
-        body.appendChild(makeCheckbox('Hide Popups', 'hidePopups', state.hidePopups));
-        body.appendChild(makeCheckbox('Dark Page', 'darkPage', state.darkPage));
-
-        body.appendChild(sectionTitle('Presets'));
-        body.appendChild(makeButton('Preset: Easy', () => {
-            state.speed = 4;
-            state.maxSpeed = 6;
-            state.acceleration = 0;
-            state.gravity = 0.5;
-            state.gapCoefficient = 2.5;
-            state.initialJumpVelocity = 14;
-            state.minJumpHeight = 20;
-            rerender();
-        }));
-
-        body.appendChild(makeButton('Preset: Fast', () => {
-            state.speed = 12;
-            state.maxSpeed = 25;
-            state.acceleration = 0.3;
-            state.gravity = 0.7;
-            state.gapCoefficient = 1.2;
-            state.initialJumpVelocity = 13;
-            state.minJumpHeight = 20;
-            rerender();
-        }));
-
-        body.appendChild(makeButton('Preset: Moon', () => {
-            state.gravity = 0.2;
-            state.initialJumpVelocity = 18;
-            state.minJumpHeight = 5;
-            state.canvasScale = 1.1;
-            rerender();
-        }));
-
-        body.appendChild(makeButton('Preset: Retro Weird', () => {
-            state.invert = 100;
-            state.hue = 180;
-            state.grayscale = 20;
-            state.sepia = 40;
-            state.saturate = 180;
-            state.contrast = 160;
-            state.brightness = 110;
-            state.glow = 25;
-            rerender();
-        }));
-
-        body.appendChild(makeButton('Preset: Clean', () => {
-            state.invert = 0;
-            state.hue = 0;
-            state.grayscale = 0;
-            state.sepia = 0;
-            state.saturate = 100;
-            state.contrast = 100;
-            state.brightness = 100;
-            state.blur = 0;
-            state.canvasScale = 1;
-            state.rotateDeg = 0;
-            state.borderRadius = 0;
-            state.glow = 0;
-            state.opacity = 100;
-            state.pageZoom = 100;
-            state.rainbowMode = false;
-            state.pulseMode = false;
-            state.shakeCanvas = false;
-            state.hideFooter = false;
-            state.hidePopups = false;
-            state.darkPage = false;
-            rerender();
-        }));
-
-        body.appendChild(makeButton('Reset Defaults', () => {
-            Object.assign(state, defaults);
-            rerender();
-        }));
-
-        body.appendChild(makeButton('Save Settings', () => {
-            saveState();
-            alert('Saved.');
-        }));
-
-        body.appendChild(makeButton('Show Canvas Outline', () => {
-            const c = getCanvas();
-            if (c) c.style.outline = '2px solid red';
-        }));
-
-        body.appendChild(makeButton('Remove Canvas Outline', () => {
-            const c = getCanvas();
-            if (c) c.style.outline = '';
-        }));
-
-        body.appendChild(makeButton('Hide Menu (F8)', () => {
-            panel.style.display = 'none';
-        }));
-
-        panel.appendChild(header);
-        panel.appendChild(body);
-        document.body.appendChild(panel);
-
+        setupGlowTrail(panel);
         makeDraggable(panel, header);
-        applyVisuals();
-    }
-
-    function sectionTitle(text) {
-        const el = document.createElement('div');
-        el.textContent = text;
-        el.style.cssText = `
-            margin: 12px 0 8px;
-            padding: 6px 8px;
-            background: rgba(255,255,255,0.06);
-            border-radius: 8px;
-            font-weight: bold;
-        `;
-        return el;
-    }
-
-    function rerender() {
-        saveState();
-        const cfg = getConfig();
-        if (cfg) applyConfig(cfg);
-        applyVisuals();
-
-        if (panel) panel.remove();
-        buildUI(cfg);
+        renderTabs();
+        renderTabContent();
     }
 
     function makeDraggable(box, handle) {
-        let dragging = false;
-        let offsetX = 0;
-        let offsetY = 0;
+        let dragging = false, ox = 0, oy = 0;
 
-        handle.addEventListener('mousedown', function (e) {
+        handle.addEventListener('mousedown', e => {
             dragging = true;
-            offsetX = e.clientX - box.offsetLeft;
-            offsetY = e.clientY - box.offsetTop;
+            ox = e.clientX - box.offsetLeft;
+            oy = e.clientY - box.offsetTop;
         });
 
-        document.addEventListener('mousemove', function (e) {
+        document.addEventListener('mousemove', e => {
             if (!dragging) return;
-            box.style.left = (e.clientX - offsetX) + 'px';
-            box.style.top = (e.clientY - offsetY) + 'px';
+            box.style.left = `${e.clientX - ox}px`;
+            box.style.top = `${e.clientY - oy}px`;
             box.style.right = 'auto';
         });
 
-        document.addEventListener('mouseup', function () {
-            dragging = false;
-        });
+        document.addEventListener('mouseup', () => dragging = false);
     }
 
-    function hotkeys() {
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'F8') {
-                if (!panel) return;
+    function rerender() {
+        if (panel) panel.remove();
+        buildUI();
+        applyVisuals();
+    }
+
+    function addHotkeys() {
+        document.addEventListener('keydown', e => {
+            if (e.key === 'F8' && panel) {
                 panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
             }
-
-            if (e.key === 'F6') {
-                state.rainbowMode = !state.rainbowMode;
-                saveState();
-            }
-
-            if (e.key === 'F7') {
-                state.nightMode = !state.nightMode;
-                const cfg = getConfig();
-                if (cfg) applyConfig(cfg);
-                applyVisuals();
-                saveState();
-            }
-
             if (e.key === 'F9') {
-                state.invert = state.invert ? 0 : 100;
+                state.invertColors = state.invertColors ? 0 : 100;
+                saveState();
                 rerender();
             }
         });
     }
 
-    waitForReady((cfg) => {
-        loadSaved();
-        captureDefaults(cfg);
-
-        state.speed ??= cfg.speed;
-        state.maxSpeed ??= cfg.maxSpeed;
-        state.acceleration ??= cfg.acceleration;
-        state.gravity ??= cfg.gravity;
-        state.gapCoefficient ??= cfg.gapCoefficient;
-        state.initialJumpVelocity ??= cfg.initialJumpVelocity;
-        state.minJumpHeight ??= cfg.minJumpHeight;
-        state.nightMode ??= cfg.nightMode;
-
-        applyConfig(cfg);
-        buildUI(cfg);
+    function init() {
+        loadState();
+        buildUI();
         applyVisuals();
-        startAnimationLoop(cfg);
-        hotkeys();
+        addHotkeys();
+        requestAnimationFrame(loop);
+        console.log('[Dino UI Mod] Loaded.');
+    }
 
-        log('Full customization menu loaded.');
-    });
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 })();
