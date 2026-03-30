@@ -1,10 +1,11 @@
 (function () {
     'use strict';
 
-    if (window.__DINO_UI_MOD_LOADED__) return;
-    window.__DINO_UI_MOD_LOADED__ = true;
+    if (window.__DINO_UI_MOD_V3__) return;
+    window.__DINO_UI_MOD_V3__ = true;
 
     const SAVE_KEY = 'dino_ui_mod_v3';
+    const TAB_KEY = 'dino_ui_mod_v3_tab';
 
     const defaults = {
         gameSize: 100,
@@ -12,6 +13,7 @@
         roundedCorners: 0,
         gameGlow: 0,
         gameTransparency: 100,
+        showCanvasOutline: false,
 
         invertColors: 0,
         colorShift: 0,
@@ -29,21 +31,34 @@
         screenShakeEffect: false,
 
         hideBottomWebsiteBar: false,
-        hidePopups: false,
-        darkWebsiteBackground: false,
-
-        showCanvasOutline: false
+        hideWebsitePopups: false,
+        darkWebsiteBackground: false
     };
 
     const state = { ...defaults };
 
-    let panel, tabsRow, contentArea, trailCanvas, trailCtx;
+    let panel = null;
+    let tabsRow = null;
+    let contentArea = null;
+    let trailCanvas = null;
+    let trailCtx = null;
     let particles = [];
-    let activeTab = 'visuals';
+    let activeTab = localStorage.getItem(TAB_KEY) || 'visuals';
 
-    const qs = s => document.querySelector(s);
-    const qsa = s => Array.from(document.querySelectorAll(s));
-    const getGameCanvas = () => qs('.runner-canvas') || qs('canvas');
+    const qs = (s) => document.querySelector(s);
+    const qsa = (s) => Array.from(document.querySelectorAll(s));
+
+    function getCanvas() {
+        return qs('.runner-canvas') || qs('canvas');
+    }
+
+    function saveState() {
+        try {
+            localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+        } catch (e) {
+            console.warn('[Dino UI Mod V3] Save failed:', e);
+        }
+    }
 
     function loadState() {
         try {
@@ -51,28 +66,19 @@
             if (!raw) return;
             const parsed = JSON.parse(raw);
             Object.assign(state, defaults, parsed);
-            console.log('[Dino UI Mod] Settings loaded.');
         } catch (e) {
-            console.warn('[Dino UI Mod] Failed to load settings:', e);
+            console.warn('[Dino UI Mod V3] Load failed:', e);
         }
     }
 
-    function saveState() {
+    function saveTab() {
         try {
-            localStorage.setItem(SAVE_KEY, JSON.stringify(state));
-            console.log('[Dino UI Mod] Settings saved.');
-        } catch (e) {
-            console.warn('[Dino UI Mod] Failed to save settings:', e);
-        }
-    }
-
-    function resetState() {
-        Object.assign(state, defaults);
-        saveState();
+            localStorage.setItem(TAB_KEY, activeTab);
+        } catch (e) {}
     }
 
     function applyVisuals() {
-        const canvas = getGameCanvas();
+        const canvas = getCanvas();
 
         if (canvas) {
             let transform = `scale(${state.gameSize / 100}) rotate(${state.gameRotation}deg)`;
@@ -88,9 +94,9 @@
                 transform += ` scale(${pulse})`;
             }
 
+            canvas.style.transition = 'filter .08s linear, transform .08s linear, box-shadow .08s linear, opacity .08s linear';
             canvas.style.transform = transform;
             canvas.style.transformOrigin = 'center center';
-            canvas.style.transition = 'all .08s linear';
             canvas.style.filter = [
                 `invert(${state.invertColors}%)`,
                 `hue-rotate(${state.colorShift}deg)`,
@@ -113,7 +119,7 @@
         if (footer) footer.style.display = state.hideBottomWebsiteBar ? 'none' : '';
 
         qsa('.blur_dialog, .contact-popup, #modalControl, #modalShare, #contact-popup').forEach(el => {
-            el.style.display = state.hidePopups ? 'none' : '';
+            el.style.display = state.hideWebsitePopups ? 'none' : '';
         });
 
         if (state.darkWebsiteBackground) {
@@ -124,18 +130,25 @@
             document.body.style.color = '';
         }
 
-        if (panel) panel.style.opacity = String(state.menuOpacity / 100);
+        if (panel) {
+            panel.style.opacity = String(state.menuOpacity / 100);
+        }
+    }
+
+    function syncInputs(key, value) {
+        if (!panel) return;
+        const range = panel.querySelector(`[data-key="${key}"]`);
+        const number = panel.querySelector(`[data-key-number="${key}"]`);
+        const label = panel.querySelector(`[data-key-value="${key}"]`);
+        if (range) range.value = value;
+        if (number) number.value = value;
+        if (label) label.textContent = value;
     }
 
     function animationLoop() {
         if (state.rainbowAnimation) {
             state.colorShift = (state.colorShift + 2) % 360;
-            const range = panel?.querySelector('[data-key="colorShift"]');
-            const number = panel?.querySelector('[data-key-number="colorShift"]');
-            const value = panel?.querySelector('[data-key-value="colorShift"]');
-            if (range) range.value = state.colorShift;
-            if (number) number.value = state.colorShift;
-            if (value) value.textContent = state.colorShift;
+            syncInputs('colorShift', state.colorShift);
         }
 
         applyVisuals();
@@ -155,7 +168,7 @@
         return el;
     }
 
-    function createControlRow(label, key, min, max, step) {
+    function createNumberSlider(label, key, min, max, step) {
         const wrap = document.createElement('div');
         wrap.style.marginBottom = '12px';
 
@@ -172,7 +185,7 @@
         const value = document.createElement('span');
         value.textContent = state[key];
         value.setAttribute('data-key-value', key);
-        value.style.cssText = 'min-width:42px;text-align:right;font-size:12px;opacity:.9;';
+        value.style.cssText = 'min-width:40px;text-align:right;font-size:12px;opacity:.9;';
 
         const number = document.createElement('input');
         number.type = 'number';
@@ -182,8 +195,13 @@
         number.value = state[key];
         number.setAttribute('data-key-number', key);
         number.style.cssText = `
-            width:72px;padding:4px 6px;border-radius:8px;border:1px solid #444;
-            background:#111;color:#fff;outline:none;
+            width:74px;
+            padding:4px 6px;
+            border-radius:8px;
+            border:1px solid #444;
+            background:#111;
+            color:#fff;
+            outline:none;
         `;
 
         const range = document.createElement('input');
@@ -209,7 +227,7 @@
 
         range.addEventListener('input', () => sync(range.value));
         number.addEventListener('change', () => sync(number.value));
-        number.addEventListener('keydown', e => {
+        number.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') sync(number.value);
         });
 
@@ -220,23 +238,30 @@
     }
 
     function createCheckbox(label, key) {
-        const lab = document.createElement('label');
-        lab.style.cssText = `
-            display:flex;align-items:center;gap:10px;margin:10px 0;
-            padding:8px 10px;border-radius:10px;
+        const row = document.createElement('label');
+        row.style.cssText = `
+            display:flex;
+            align-items:center;
+            gap:10px;
+            margin:10px 0;
+            padding:8px 10px;
+            border-radius:10px;
             background:rgba(255,255,255,.03);
-            transition:background .2s ease, transform .2s ease;
             cursor:pointer;
+            transition:background .2s ease, transform .2s ease, box-shadow .2s ease;
         `;
 
-        lab.onmouseenter = () => {
-            lab.style.background = 'rgba(83,216,255,.08)';
-            lab.style.transform = 'translateX(2px)';
-        };
-        lab.onmouseleave = () => {
-            lab.style.background = 'rgba(255,255,255,.03)';
-            lab.style.transform = 'translateX(0)';
-        };
+        row.addEventListener('mouseenter', () => {
+            row.style.background = 'rgba(83,216,255,.08)';
+            row.style.transform = 'translateX(2px)';
+            row.style.boxShadow = '0 0 10px rgba(83,216,255,.08)';
+        });
+
+        row.addEventListener('mouseleave', () => {
+            row.style.background = 'rgba(255,255,255,.03)';
+            row.style.transform = 'translateX(0)';
+            row.style.boxShadow = '';
+        });
 
         const input = document.createElement('input');
         input.type = 'checkbox';
@@ -252,14 +277,14 @@
             applyVisuals();
         });
 
-        lab.append(input, text);
-        return lab;
+        row.append(input, text);
+        return row;
     }
 
-    function createButton(text, fn) {
-        const b = document.createElement('button');
-        b.textContent = text;
-        b.style.cssText = `
+    function createButton(text, onClick) {
+        const btn = document.createElement('button');
+        btn.textContent = text;
+        btn.style.cssText = `
             width:100%;
             margin:8px 0;
             padding:10px 12px;
@@ -270,26 +295,29 @@
             cursor:pointer;
             transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
         `;
-        b.onmouseenter = () => {
-            b.style.transform = 'translateY(-1px)';
-            b.style.boxShadow = '0 0 18px rgba(83,216,255,.22)';
-            b.style.borderColor = 'rgba(83,216,255,.45)';
-            b.style.background = 'linear-gradient(180deg,#253640,#12181c)';
-        };
-        b.onmouseleave = () => {
-            b.style.transform = 'translateY(0)';
-            b.style.boxShadow = '';
-            b.style.borderColor = 'rgba(255,255,255,.14)';
-            b.style.background = 'linear-gradient(180deg,#1b1b1b,#101010)';
-        };
-        b.addEventListener('click', fn);
-        return b;
+
+        btn.addEventListener('mouseenter', () => {
+            btn.style.transform = 'translateY(-1px)';
+            btn.style.boxShadow = '0 0 18px rgba(83,216,255,.22)';
+            btn.style.borderColor = 'rgba(83,216,255,.45)';
+            btn.style.background = 'linear-gradient(180deg,#253640,#12181c)';
+        });
+
+        btn.addEventListener('mouseleave', () => {
+            btn.style.transform = 'translateY(0)';
+            btn.style.boxShadow = '';
+            btn.style.borderColor = 'rgba(255,255,255,.14)';
+            btn.style.background = 'linear-gradient(180deg,#1b1b1b,#101010)';
+        });
+
+        btn.addEventListener('click', onClick);
+        return btn;
     }
 
-    function tabButton(id, text) {
-        const b = document.createElement('button');
-        b.textContent = text;
-        b.style.cssText = `
+    function createTab(id, text) {
+        const btn = document.createElement('button');
+        btn.textContent = text;
+        btn.style.cssText = `
             flex:0 0 auto;
             padding:8px 12px;
             border-radius:10px;
@@ -300,51 +328,68 @@
             transition:all .2s ease;
             white-space:nowrap;
         `;
-        b.onclick = () => {
+
+        btn.addEventListener('mouseenter', () => {
+            if (activeTab !== id) btn.style.background = 'rgba(83,216,255,.10)';
+        });
+
+        btn.addEventListener('mouseleave', () => {
+            if (activeTab !== id) btn.style.background = 'rgba(255,255,255,.04)';
+        });
+
+        btn.addEventListener('click', () => {
             activeTab = id;
+            saveTab();
             renderTabs();
-            renderTabContent();
-        };
-        return b;
+            renderContent();
+        });
+
+        return btn;
     }
 
     function renderTabs() {
         tabsRow.innerHTML = '';
         tabsRow.append(
-            tabButton('visuals', 'Visuals'),
-            tabButton('effects', 'Effects'),
-            tabButton('website', 'Website'),
-            tabButton('themes', 'Themes'),
-            tabButton('settings', 'Settings')
+            createTab('visuals', 'Visuals'),
+            createTab('effects', 'Effects'),
+            createTab('website', 'Website'),
+            createTab('themes', 'Themes'),
+            createTab('settings', 'Settings')
         );
     }
 
-    function renderTabContent() {
+    function setTheme(values) {
+        Object.assign(state, values);
+        saveState();
+        rerender();
+    }
+
+    function renderContent() {
         contentArea.innerHTML = '';
 
         if (activeTab === 'visuals') {
             contentArea.append(
                 sectionTitle('Game Appearance'),
-                createControlRow('Game Size', 'gameSize', 50, 300, 1),
-                createControlRow('Game Rotation', 'gameRotation', -180, 180, 1),
-                createControlRow('Rounded Corners', 'roundedCorners', 0, 50, 1),
-                createControlRow('Game Glow', 'gameGlow', 0, 80, 1),
-                createControlRow('Game Transparency', 'gameTransparency', 10, 100, 1),
+                createNumberSlider('Game Size', 'gameSize', 50, 300, 1),
+                createNumberSlider('Game Rotation', 'gameRotation', -180, 180, 1),
+                createNumberSlider('Rounded Corners', 'roundedCorners', 0, 50, 1),
+                createNumberSlider('Game Glow', 'gameGlow', 0, 80, 1),
+                createNumberSlider('Game Transparency', 'gameTransparency', 10, 100, 1),
                 createCheckbox('Show Red Outline Around Game', 'showCanvasOutline')
             );
         }
 
         if (activeTab === 'effects') {
             contentArea.append(
-                sectionTitle('Color & Filter Effects'),
-                createControlRow('Invert Colors', 'invertColors', 0, 100, 1),
-                createControlRow('Color Shift', 'colorShift', 0, 360, 1),
-                createControlRow('Grayscale', 'grayscale', 0, 100, 1),
-                createControlRow('Sepia', 'sepia', 0, 100, 1),
-                createControlRow('Saturation', 'saturation', 0, 300, 1),
-                createControlRow('Contrast', 'contrast', 0, 300, 1),
-                createControlRow('Brightness', 'brightness', 0, 300, 1),
-                createControlRow('Blur Effect', 'blurEffect', 0, 10, 0.1),
+                sectionTitle('Color and Filter Effects'),
+                createNumberSlider('Invert Colors', 'invertColors', 0, 100, 1),
+                createNumberSlider('Color Shift', 'colorShift', 0, 360, 1),
+                createNumberSlider('Grayscale', 'grayscale', 0, 100, 1),
+                createNumberSlider('Sepia', 'sepia', 0, 100, 1),
+                createNumberSlider('Saturation', 'saturation', 0, 300, 1),
+                createNumberSlider('Contrast', 'contrast', 0, 300, 1),
+                createNumberSlider('Brightness', 'brightness', 0, 300, 1),
+                createNumberSlider('Blur Effect', 'blurEffect', 0, 10, 0.1),
                 createCheckbox('Rainbow Color Animation', 'rainbowAnimation'),
                 createCheckbox('Breathing Size Animation', 'breathingAnimation'),
                 createCheckbox('Screen Shake Effect', 'screenShakeEffect')
@@ -354,10 +399,10 @@
         if (activeTab === 'website') {
             contentArea.append(
                 sectionTitle('Website Options'),
-                createControlRow('Website Zoom', 'websiteZoom', 50, 200, 1),
-                createControlRow('Menu Transparency', 'menuOpacity', 20, 100, 1),
+                createNumberSlider('Website Zoom', 'websiteZoom', 50, 200, 1),
+                createNumberSlider('Menu Transparency', 'menuOpacity', 20, 100, 1),
                 createCheckbox('Hide Bottom Website Bar', 'hideBottomWebsiteBar'),
-                createCheckbox('Hide Website Popups', 'hidePopups'),
+                createCheckbox('Hide Website Popups', 'hideWebsitePopups'),
                 createCheckbox('Dark Website Background', 'darkWebsiteBackground')
             );
         }
@@ -365,52 +410,32 @@
         if (activeTab === 'themes') {
             contentArea.append(
                 sectionTitle('Quick Themes'),
-                createButton('Default Theme', () => {
-                    Object.assign(state, defaults);
-                    saveState();
-                    rerender();
-                }),
-                createButton('Neon Theme', () => {
-                    Object.assign(state, {
-                        gameGlow: 28,
-                        saturation: 180,
-                        contrast: 145,
-                        brightness: 115,
-                        colorShift: 160
-                    });
-                    saveState();
-                    rerender();
-                }),
-                createButton('Retro Theme', () => {
-                    Object.assign(state, {
-                        grayscale: 15,
-                        sepia: 35,
-                        contrast: 130,
-                        brightness: 95,
-                        gameGlow: 8
-                    });
-                    saveState();
-                    rerender();
-                }),
-                createButton('Inverted Theme', () => {
-                    Object.assign(state, {
-                        invertColors: 100,
-                        colorShift: 180,
-                        contrast: 120
-                    });
-                    saveState();
-                    rerender();
-                }),
-                createButton('Soft Glow Theme', () => {
-                    Object.assign(state, {
-                        gameGlow: 18,
-                        brightness: 108,
-                        blurEffect: 0.3,
-                        roundedCorners: 12
-                    });
-                    saveState();
-                    rerender();
-                })
+                createButton('Default Theme', () => setTheme({ ...defaults })),
+                createButton('Neon Theme', () => setTheme({
+                    gameGlow: 28,
+                    saturation: 180,
+                    contrast: 145,
+                    brightness: 115,
+                    colorShift: 160
+                })),
+                createButton('Retro Theme', () => setTheme({
+                    grayscale: 15,
+                    sepia: 35,
+                    contrast: 130,
+                    brightness: 95,
+                    gameGlow: 8
+                })),
+                createButton('Inverted Theme', () => setTheme({
+                    invertColors: 100,
+                    colorShift: 180,
+                    contrast: 120
+                })),
+                createButton('Soft Glow Theme', () => setTheme({
+                    gameGlow: 18,
+                    brightness: 108,
+                    blurEffect: 0.3,
+                    roundedCorners: 12
+                }))
             );
         }
 
@@ -419,7 +444,8 @@
                 sectionTitle('Menu Settings'),
                 createButton('Save Settings Now', () => saveState()),
                 createButton('Reset Everything', () => {
-                    resetState();
+                    Object.assign(state, defaults);
+                    saveState();
                     rerender();
                 }),
                 createButton('Hide Menu (F8)', () => {
@@ -451,7 +477,7 @@
         resize();
         new ResizeObserver(resize).observe(container);
 
-        container.addEventListener('mousemove', e => {
+        container.addEventListener('mousemove', (e) => {
             const rect = container.getBoundingClientRect();
             particles.push({
                 x: e.clientX - rect.left,
@@ -463,7 +489,12 @@
             });
         });
 
-        function animateTrail() {
+        function tick() {
+            if (!trailCtx) {
+                requestAnimationFrame(tick);
+                return;
+            }
+
             trailCtx.clearRect(0, 0, trailCanvas.width, trailCanvas.height);
 
             for (let i = particles.length - 1; i >= 0; i--) {
@@ -481,17 +512,41 @@
                 const g = trailCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
                 g.addColorStop(0, `rgba(83,216,255,${p.a})`);
                 g.addColorStop(0.45, `rgba(83,216,255,${p.a * 0.45})`);
-                g.addColorStop(1, `rgba(83,216,255,0)`);
+                g.addColorStop(1, 'rgba(83,216,255,0)');
+
                 trailCtx.fillStyle = g;
                 trailCtx.beginPath();
                 trailCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
                 trailCtx.fill();
             }
 
-            requestAnimationFrame(animateTrail);
+            requestAnimationFrame(tick);
         }
 
-        animateTrail();
+        tick();
+    }
+
+    function makeDraggable(box, handle) {
+        let dragging = false;
+        let ox = 0;
+        let oy = 0;
+
+        handle.addEventListener('mousedown', (e) => {
+            dragging = true;
+            ox = e.clientX - box.offsetLeft;
+            oy = e.clientY - box.offsetTop;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+            box.style.left = `${e.clientX - ox}px`;
+            box.style.top = `${e.clientY - oy}px`;
+            box.style.right = 'auto';
+        });
+
+        document.addEventListener('mouseup', () => {
+            dragging = false;
+        });
     }
 
     function buildUI() {
@@ -518,7 +573,7 @@
         inner.style.cssText = 'position:relative;z-index:1;display:flex;flex-direction:column;height:100%;';
 
         const header = document.createElement('div');
-        header.textContent = 'Dino Customization Menu';
+        header.textContent = 'Dino Customization Menu V3';
         header.style.cssText = `
             padding:12px 14px;
             font-weight:700;
@@ -558,28 +613,7 @@
         setupGlowTrail(panel);
         makeDraggable(panel, header);
         renderTabs();
-        renderTabContent();
-    }
-
-    function makeDraggable(box, handle) {
-        let dragging = false, ox = 0, oy = 0;
-
-        handle.addEventListener('mousedown', e => {
-            dragging = true;
-            ox = e.clientX - box.offsetLeft;
-            oy = e.clientY - box.offsetTop;
-        });
-
-        document.addEventListener('mousemove', e => {
-            if (!dragging) return;
-            box.style.left = `${e.clientX - ox}px`;
-            box.style.top = `${e.clientY - oy}px`;
-            box.style.right = 'auto';
-        });
-
-        document.addEventListener('mouseup', () => {
-            dragging = false;
-        });
+        renderContent();
     }
 
     function rerender() {
@@ -589,7 +623,7 @@
     }
 
     function addHotkeys() {
-        document.addEventListener('keydown', e => {
+        document.addEventListener('keydown', (e) => {
             if (e.key === 'F8' && panel) {
                 panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
             }
@@ -602,7 +636,7 @@
         applyVisuals();
         addHotkeys();
         requestAnimationFrame(animationLoop);
-        console.log('[Dino UI Mod] Loaded.');
+        console.log('[Dino UI Mod V3] Loaded');
     }
 
     if (document.readyState === 'loading') {
