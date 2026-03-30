@@ -4,9 +4,9 @@
     if (window.__DINO_UI_MOD_LOADED__) return;
     window.__DINO_UI_MOD_LOADED__ = true;
 
-    const SAVE_KEY = 'dino_ui_mod_v2';
+    const SAVE_KEY = 'dino_ui_mod_v3';
 
-    const state = {
+    const defaults = {
         gameSize: 100,
         gameRotation: 0,
         roundedCorners: 0,
@@ -30,40 +30,52 @@
 
         hideBottomWebsiteBar: false,
         hidePopups: false,
-        darkWebsiteBackground: false
+        darkWebsiteBackground: false,
+
+        showCanvasOutline: false
     };
 
-    let panel, body, trailCanvas, trailCtx, canvasEl;
+    const state = { ...defaults };
+
+    let panel, tabsRow, contentArea, trailCanvas, trailCtx;
     let particles = [];
     let activeTab = 'visuals';
 
-    function qs(s) { return document.querySelector(s); }
-    function qsa(s) { return Array.from(document.querySelectorAll(s)); }
-    function getGameCanvas() { return qs('.runner-canvas') || qs('canvas'); }
+    const qs = s => document.querySelector(s);
+    const qsa = s => Array.from(document.querySelectorAll(s));
+    const getGameCanvas = () => qs('.runner-canvas') || qs('canvas');
 
     function loadState() {
         try {
             const raw = localStorage.getItem(SAVE_KEY);
             if (!raw) return;
-            Object.assign(state, JSON.parse(raw));
+            const parsed = JSON.parse(raw);
+            Object.assign(state, defaults, parsed);
+            console.log('[Dino UI Mod] Settings loaded.');
         } catch (e) {
-            console.warn('[Dino UI Mod] Load failed', e);
+            console.warn('[Dino UI Mod] Failed to load settings:', e);
         }
     }
 
     function saveState() {
         try {
             localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+            console.log('[Dino UI Mod] Settings saved.');
         } catch (e) {
-            console.warn('[Dino UI Mod] Save failed', e);
+            console.warn('[Dino UI Mod] Failed to save settings:', e);
         }
     }
 
+    function resetState() {
+        Object.assign(state, defaults);
+        saveState();
+    }
+
     function applyVisuals() {
-        canvasEl = getGameCanvas();
-        if (canvasEl) {
-            let scale = state.gameSize / 100;
-            let transform = `scale(${scale}) rotate(${state.gameRotation}deg)`;
+        const canvas = getGameCanvas();
+
+        if (canvas) {
+            let transform = `scale(${state.gameSize / 100}) rotate(${state.gameRotation}deg)`;
 
             if (state.screenShakeEffect) {
                 const dx = (Math.random() * 4 - 2).toFixed(1);
@@ -76,7 +88,10 @@
                 transform += ` scale(${pulse})`;
             }
 
-            const filter = [
+            canvas.style.transform = transform;
+            canvas.style.transformOrigin = 'center center';
+            canvas.style.transition = 'all .08s linear';
+            canvas.style.filter = [
                 `invert(${state.invertColors}%)`,
                 `hue-rotate(${state.colorShift}deg)`,
                 `grayscale(${state.grayscale}%)`,
@@ -86,14 +101,10 @@
                 `brightness(${state.brightness}%)`,
                 `blur(${state.blurEffect}px)`
             ].join(' ');
-
-            canvasEl.style.transition = 'all .08s linear';
-            canvasEl.style.transform = transform;
-            canvasEl.style.transformOrigin = 'center center';
-            canvasEl.style.filter = filter;
-            canvasEl.style.borderRadius = state.roundedCorners + 'px';
-            canvasEl.style.opacity = String(state.gameTransparency / 100);
-            canvasEl.style.boxShadow = `0 0 ${state.gameGlow}px rgba(0,255,255,.85)`;
+            canvas.style.borderRadius = `${state.roundedCorners}px`;
+            canvas.style.opacity = String(state.gameTransparency / 100);
+            canvas.style.boxShadow = `0 0 ${state.gameGlow}px rgba(83,216,255,.9)`;
+            canvas.style.outline = state.showCanvasOutline ? '2px solid #ff4d4d' : '';
         }
 
         document.documentElement.style.zoom = String(state.websiteZoom / 100);
@@ -101,8 +112,9 @@
         const footer = qs('.footer');
         if (footer) footer.style.display = state.hideBottomWebsiteBar ? 'none' : '';
 
-        qsa('.blur_dialog, .contact-popup, #modalControl, #modalShare, #contact-popup')
-            .forEach(el => el.style.display = state.hidePopups ? 'none' : '');
+        qsa('.blur_dialog, .contact-popup, #modalControl, #modalShare, #contact-popup').forEach(el => {
+            el.style.display = state.hidePopups ? 'none' : '';
+        });
 
         if (state.darkWebsiteBackground) {
             document.body.style.background = '#0a0a0a';
@@ -115,32 +127,32 @@
         if (panel) panel.style.opacity = String(state.menuOpacity / 100);
     }
 
-    function loop() {
+    function animationLoop() {
         if (state.rainbowAnimation) {
             state.colorShift = (state.colorShift + 2) % 360;
-            const input = panel?.querySelector('[data-key="colorShift"][type="range"]');
+            const range = panel?.querySelector('[data-key="colorShift"]');
             const number = panel?.querySelector('[data-key-number="colorShift"]');
-            const val = panel?.querySelector('[data-key-value="colorShift"]');
-            if (input) input.value = state.colorShift;
+            const value = panel?.querySelector('[data-key-value="colorShift"]');
+            if (range) range.value = state.colorShift;
             if (number) number.value = state.colorShift;
-            if (val) val.textContent = state.colorShift;
+            if (value) value.textContent = state.colorShift;
         }
+
         applyVisuals();
-        requestAnimationFrame(loop);
+        requestAnimationFrame(animationLoop);
     }
 
     function sectionTitle(text) {
-        const d = document.createElement('div');
-        d.textContent = text;
-        d.style.cssText = `
+        const el = document.createElement('div');
+        el.textContent = text;
+        el.style.cssText = `
             margin: 12px 0 8px;
             padding: 8px 10px;
             border-radius: 10px;
             background: rgba(255,255,255,.06);
             font-weight: 700;
-            letter-spacing: .2px;
         `;
-        return d;
+        return el;
     }
 
     function createControlRow(label, key, min, max, step) {
@@ -186,8 +198,7 @@
         function sync(v) {
             let num = Number(v);
             if (Number.isNaN(num)) return;
-            if (min !== undefined) num = Math.max(Number(min), num);
-            if (max !== undefined) num = Math.min(Number(max), num);
+            num = Math.max(Number(min), Math.min(Number(max), num));
             state[key] = num;
             value.textContent = num;
             range.value = num;
@@ -217,6 +228,7 @@
             transition:background .2s ease, transform .2s ease;
             cursor:pointer;
         `;
+
         lab.onmouseenter = () => {
             lab.style.background = 'rgba(83,216,255,.08)';
             lab.style.transform = 'translateX(2px)';
@@ -278,26 +290,23 @@
         const b = document.createElement('button');
         b.textContent = text;
         b.style.cssText = `
-            flex:1;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.08);
+            flex:0 0 auto;
+            padding:8px 12px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,.08);
             background:${activeTab === id ? 'rgba(83,216,255,.18)' : 'rgba(255,255,255,.04)'};
-            color:#fff;cursor:pointer;transition:all .2s ease;
+            color:#fff;
+            cursor:pointer;
+            transition:all .2s ease;
+            white-space:nowrap;
         `;
-        b.onmouseenter = () => {
-            if (activeTab !== id) b.style.background = 'rgba(83,216,255,.10)';
-        };
-        b.onmouseleave = () => {
-            if (activeTab !== id) b.style.background = 'rgba(255,255,255,.04)';
-        };
         b.onclick = () => {
             activeTab = id;
-            renderTabContent();
             renderTabs();
+            renderTabContent();
         };
-        b.dataset.tabId = id;
         return b;
     }
-
-    let tabsRow, contentArea;
 
     function renderTabs() {
         tabsRow.innerHTML = '';
@@ -320,7 +329,8 @@
                 createControlRow('Game Rotation', 'gameRotation', -180, 180, 1),
                 createControlRow('Rounded Corners', 'roundedCorners', 0, 50, 1),
                 createControlRow('Game Glow', 'gameGlow', 0, 80, 1),
-                createControlRow('Game Transparency', 'gameTransparency', 10, 100, 1)
+                createControlRow('Game Transparency', 'gameTransparency', 10, 100, 1),
+                createCheckbox('Show Red Outline Around Game', 'showCanvasOutline')
             );
         }
 
@@ -356,71 +366,61 @@
             contentArea.append(
                 sectionTitle('Quick Themes'),
                 createButton('Default Theme', () => {
-                    Object.assign(state, {
-                        gameSize: 100, gameRotation: 0, roundedCorners: 0, gameGlow: 0, gameTransparency: 100,
-                        invertColors: 0, colorShift: 0, grayscale: 0, sepia: 0, saturation: 100,
-                        contrast: 100, brightness: 100, blurEffect: 0,
-                        rainbowAnimation: false, breathingAnimation: false, screenShakeEffect: false
-                    });
-                    saveState(); rerender();
+                    Object.assign(state, defaults);
+                    saveState();
+                    rerender();
                 }),
                 createButton('Neon Theme', () => {
                     Object.assign(state, {
-                        gameGlow: 28, saturation: 180, contrast: 145, brightness: 115, colorShift: 160
+                        gameGlow: 28,
+                        saturation: 180,
+                        contrast: 145,
+                        brightness: 115,
+                        colorShift: 160
                     });
-                    saveState(); rerender();
+                    saveState();
+                    rerender();
                 }),
                 createButton('Retro Theme', () => {
                     Object.assign(state, {
-                        grayscale: 15, sepia: 35, contrast: 130, brightness: 95, gameGlow: 8
+                        grayscale: 15,
+                        sepia: 35,
+                        contrast: 130,
+                        brightness: 95,
+                        gameGlow: 8
                     });
-                    saveState(); rerender();
+                    saveState();
+                    rerender();
                 }),
                 createButton('Inverted Theme', () => {
                     Object.assign(state, {
-                        invertColors: 100, colorShift: 180, contrast: 120
+                        invertColors: 100,
+                        colorShift: 180,
+                        contrast: 120
                     });
-                    saveState(); rerender();
+                    saveState();
+                    rerender();
                 }),
                 createButton('Soft Glow Theme', () => {
                     Object.assign(state, {
-                        gameGlow: 18, brightness: 108, blurEffect: 0.3, roundedCorners: 12
+                        gameGlow: 18,
+                        brightness: 108,
+                        blurEffect: 0.3,
+                        roundedCorners: 12
                     });
-                    saveState(); rerender();
-                }),
-                createButton('Weird Theme', () => {
-                    Object.assign(state, {
-                        colorShift: 220, saturation: 220, contrast: 165, brightness: 120,
-                        breathingAnimation: true, rainbowAnimation: true
-                    });
-                    saveState(); rerender();
+                    saveState();
+                    rerender();
                 })
             );
         }
 
         if (activeTab === 'settings') {
             contentArea.append(
-                sectionTitle('Settings'),
-                createButton('Save Settings', () => saveState()),
+                sectionTitle('Menu Settings'),
+                createButton('Save Settings Now', () => saveState()),
                 createButton('Reset Everything', () => {
-                    localStorage.removeItem(SAVE_KEY);
-                    Object.assign(state, {
-                        gameSize: 100, gameRotation: 0, roundedCorners: 0, gameGlow: 0, gameTransparency: 100,
-                        invertColors: 0, colorShift: 0, grayscale: 0, sepia: 0, saturation: 100,
-                        contrast: 100, brightness: 100, blurEffect: 0,
-                        websiteZoom: 100, menuOpacity: 96,
-                        rainbowAnimation: false, breathingAnimation: false, screenShakeEffect: false,
-                        hideBottomWebsiteBar: false, hidePopups: false, darkWebsiteBackground: false
-                    });
+                    resetState();
                     rerender();
-                }),
-                createButton('Show Canvas Outline', () => {
-                    const c = getGameCanvas();
-                    if (c) c.style.outline = '2px solid #ff4d4d';
-                }),
-                createButton('Remove Canvas Outline', () => {
-                    const c = getGameCanvas();
-                    if (c) c.style.outline = '';
                 }),
                 createButton('Hide Menu (F8)', () => {
                     panel.style.display = 'none';
@@ -432,8 +432,13 @@
     function setupGlowTrail(container) {
         trailCanvas = document.createElement('canvas');
         trailCanvas.style.cssText = `
-            position:absolute;inset:0;width:100%;height:100%;
-            pointer-events:none;border-radius:14px;z-index:0;
+            position:absolute;
+            inset:0;
+            width:100%;
+            height:100%;
+            pointer-events:none;
+            border-radius:14px;
+            z-index:0;
         `;
         container.appendChild(trailCanvas);
         trailCtx = trailCanvas.getContext('2d');
@@ -442,6 +447,7 @@
             trailCanvas.width = container.clientWidth;
             trailCanvas.height = container.clientHeight;
         }
+
         resize();
         new ResizeObserver(resize).observe(container);
 
@@ -458,8 +464,6 @@
         });
 
         function animateTrail() {
-            if (!trailCtx) return requestAnimationFrame(animateTrail);
-
             trailCtx.clearRect(0, 0, trailCanvas.width, trailCanvas.height);
 
             for (let i = particles.length - 1; i >= 0; i--) {
@@ -486,14 +490,20 @@
 
             requestAnimationFrame(animateTrail);
         }
+
         animateTrail();
     }
 
     function buildUI() {
         panel = document.createElement('div');
         panel.style.cssText = `
-            position:fixed;top:20px;right:20px;z-index:999999;
-            width:360px;max-height:86vh;overflow:hidden;
+            position:fixed;
+            top:20px;
+            right:20px;
+            z-index:999999;
+            width:360px;
+            max-height:86vh;
+            overflow:hidden;
             border-radius:14px;
             border:1px solid rgba(255,255,255,.1);
             background:linear-gradient(180deg,rgba(20,20,24,.92),rgba(10,10,14,.92));
@@ -505,22 +515,41 @@
         `;
 
         const inner = document.createElement('div');
-        inner.style.cssText = 'position:relative;z-index:1;display:flex;flex-direction:column;';
+        inner.style.cssText = 'position:relative;z-index:1;display:flex;flex-direction:column;height:100%;';
 
         const header = document.createElement('div');
         header.textContent = 'Dino Customization Menu';
         header.style.cssText = `
-            padding:12px 14px;font-weight:700;cursor:move;
+            padding:12px 14px;
+            font-weight:700;
+            cursor:move;
             border-bottom:1px solid rgba(255,255,255,.08);
             background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));
-            letter-spacing:.2px;
+            position:sticky;
+            top:0;
+            z-index:2;
         `;
 
         tabsRow = document.createElement('div');
-        tabsRow.style.cssText = 'display:flex;gap:8px;padding:10px 10px 0 10px;';
+        tabsRow.style.cssText = `
+            display:flex;
+            gap:8px;
+            padding:10px 10px 0 10px;
+            overflow-x:auto;
+            overflow-y:hidden;
+            scrollbar-width:thin;
+            position:sticky;
+            top:45px;
+            z-index:2;
+            background:rgba(15,15,18,.85);
+        `;
 
         contentArea = document.createElement('div');
-        contentArea.style.cssText = 'padding:10px;overflow:auto;max-height:65vh;';
+        contentArea.style.cssText = `
+            padding:10px;
+            overflow:auto;
+            max-height:65vh;
+        `;
 
         inner.append(header, tabsRow, contentArea);
         panel.append(inner);
@@ -548,7 +577,9 @@
             box.style.right = 'auto';
         });
 
-        document.addEventListener('mouseup', () => dragging = false);
+        document.addEventListener('mouseup', () => {
+            dragging = false;
+        });
     }
 
     function rerender() {
@@ -562,11 +593,6 @@
             if (e.key === 'F8' && panel) {
                 panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
             }
-            if (e.key === 'F9') {
-                state.invertColors = state.invertColors ? 0 : 100;
-                saveState();
-                rerender();
-            }
         });
     }
 
@@ -575,7 +601,7 @@
         buildUI();
         applyVisuals();
         addHotkeys();
-        requestAnimationFrame(loop);
+        requestAnimationFrame(animationLoop);
         console.log('[Dino UI Mod] Loaded.');
     }
 
